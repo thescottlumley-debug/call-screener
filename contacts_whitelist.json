@@ -1,0 +1,22 @@
+{
+  "approved_names": [
+    "Mom",
+    "Dad",
+    "Grandma",
+    "Grandpa",
+    "Mike",
+    "Sarah",
+    "Dr. Johnson",
+    "Les",
+    "Lesley",
+    "Liz",
+    "Lumley",
+    "father",
+    "dad"
+  ],
+  "approved_numbers": [
+    "+16158121850",
+    "+16294019342"
+  ],
+  "notes": "Add any name here that should always be forwarded to Scott. First names work fine. Save the file and push to GitHub — it updates automatically within 2 minutes."
+}
