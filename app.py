@@ -844,15 +844,26 @@ def sms_webhook():
       APPTS             → list scheduled callbacks
       HISTORY +1XXXXXXX → caller history
     """
-    data = request.json
+    data = request.json or {}
+    print(f"[SMS Raw] {json.dumps(data)[:500]}")
+
     payload = data.get("data", {}).get("payload", {})
-    from_number = payload.get("from", {}).get("phone_number", "")
+
+    # Telnyx can send "from" as a dict {"phone_number": "..."} or a plain string
+    from_raw = payload.get("from", {})
+    if isinstance(from_raw, dict):
+        from_number = from_raw.get("phone_number", "")
+    else:
+        from_number = str(from_raw)
+
     text = payload.get("text", "").strip().upper()
 
-    print(f"[SMS In] from={from_number} text='{text}'")
+    print(f"[SMS In] from={from_number} text='{text}' scott={SCOTT_REAL_NUMBER}")
 
-    if from_number != SCOTT_REAL_NUMBER:
-        print(f"[SMS] Ignored — not from Scott ({from_number})")
+    if not SCOTT_REAL_NUMBER:
+        print("[SMS] WARNING: SCOTT_REAL_NUMBER env var not set — accepting all SMS for debug")
+    elif from_number != SCOTT_REAL_NUMBER:
+        print(f"[SMS] Ignored — not from Scott ({from_number} != {SCOTT_REAL_NUMBER})")
         return jsonify({"status": "ok"})
 
     contacts = load_contacts()
