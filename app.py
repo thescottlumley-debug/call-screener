@@ -481,6 +481,20 @@ def speak(ccid, message, client_state=None):
         kwargs["client_state"] = encode_state(client_state)
     telnyx_action(ccid, "speak", **kwargs)
 
+def play_hold_music(ccid):
+    """Play looping hold music while caller waits for Scott's decision."""
+    telnyx_action(ccid, "playback_start",
+        audio_url="https://dl.espressif.com/dl/audio/ff-16b-2c-44100hz.mp3",
+        loop=True,
+        client_state=encode_state("hold_music"),
+    )
+    print(f"[Hold Music] Started for {ccid}")
+
+def stop_hold_music(ccid):
+    """Stop hold music before speaking or transferring."""
+    telnyx_action(ccid, "playback_stop")
+    print(f"[Hold Music] Stopped for {ccid}")
+
 def start_listening(ccid):
     telnyx_action(ccid, "transcription_start",
         transcription_engine="Deepgram",
@@ -986,6 +1000,7 @@ def sms_webhook():
 
         if text in ("FORWARD", "F"):
             pending_relay.pop(relay_caller_id, None)
+            stop_hold_music(relay_ccid)
             briefing = build_briefing(relay_caller_id, name, purpose, urgency, caller_type)
             speak(relay_ccid, briefing, client_state="briefing")
             telnyx_action(relay_ccid, "transfer", to=SCOTT_REAL_NUMBER)
@@ -997,6 +1012,7 @@ def sms_webhook():
 
         elif text in ("VM", "VOICEMAIL"):
             pending_relay.pop(relay_caller_id, None)
+            stop_hold_music(relay_ccid)
             start_voicemail(relay_ccid, relay_caller_id, reason="scott chose voicemail via SMS")
             send_sms(SCOTT_REAL_NUMBER, f"📬 Sending {name or relay_caller_id} to voicemail.")
 
@@ -1313,9 +1329,10 @@ def webhook():
             pass
 
         elif client_state == "relay_hold":
-            # After hold message, listen in case caller says "voicemail" or hangs up
+            # After hold message finishes, start hold music + listen for voicemail opt-out
             session = call_sessions.get(ccid)
             if session and session.get("relay_sent"):
+                play_hold_music(ccid)
                 start_listening(ccid)
 
         else:
@@ -1414,6 +1431,7 @@ def webhook():
                 print(f"[Relay Hold] Caller opted for voicemail: '{transcript}'")
                 pending_relay.pop(caller_id, None)
                 session["relay_sent"] = False
+                stop_hold_music(ccid)
                 start_voicemail(ccid, caller_id, reason="caller chose voicemail while on hold")
             else:
                 # Caller said something else — reassure them
