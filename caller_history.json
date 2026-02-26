@@ -16,12 +16,12 @@
     "Unknown": {
       "name": "Kylie",
       "first_call": "2026-02-26T18:59:17.785511Z",
-      "last_call": "2026-02-26T18:59:40.336834Z",
+      "last_call": "2026-02-26T18:59:51.039144Z",
       "call_count": 0,
       "last_action": "speak",
-      "last_purpose": null,
+      "last_purpose": "personal",
       "last_urgency": null,
-      "caller_type": null,
+      "caller_type": "personal",
       "lookup_summary": null,
       "notes": [],
       "voicemails": []
