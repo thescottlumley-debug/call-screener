@@ -471,6 +471,8 @@ def decode_state(s):
         return s
 
 def speak(ccid, message, client_state=None):
+    # Stop transcription before speaking so ARIA can't hear herself
+    telnyx_action(ccid, "transcription_stop")
     kwargs = {
         "payload": message,
         "payload_type": "text",
@@ -774,10 +776,34 @@ def finalize_voicemail(ccid, caller_id, session):
 # ─────────────────────────────────────────────
 
 def looks_like_greeting_echo(transcript):
-    echo_phrases = ["scott lumley", "ai assistant", "how may i help", "you have reached",
-                    "aria", "i am aria", "hello this is aria"]
-    t = transcript.lower()
-    return any(p in t for p in echo_phrases)
+    """Detect if transcript is ARIA's own voice being picked up (echo/crosstalk)."""
+    # ARIA's own phrases
+    echo_phrases = [
+        "scott lumley", "ai assistant", "how may i help", "you have reached",
+        "aria", "i am aria", "hello this is aria",
+        "thank you for calling", "scott's office", "personal assistant",
+        "may i ask who", "how can i assist", "how can i help",
+        "please leave", "leave your name", "not available",
+        "one moment", "connecting you", "checking with scott",
+        "please hold", "i can take a message", "say voicemail",
+        "welcome back", "last time you called",
+    ]
+    t = transcript.lower().strip()
+
+    # Match any echo phrase
+    if any(p in t for p in echo_phrases):
+        return True
+
+    # Very short transcripts (1-2 words) right at the start of a call
+    # are almost always ARIA's own voice bleeding through
+    word_count = len(t.split())
+    if word_count <= 2 and t in [
+        "bye", "bye bye", "goodbye", "hello", "hi", "okay", "ok",
+        "yes", "no", "sure", "thank you", "thanks", "great", "good"
+    ]:
+        return True
+
+    return False
 
 def extract_name_from_transcript(transcript):
     try:
