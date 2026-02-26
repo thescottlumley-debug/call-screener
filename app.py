@@ -1028,13 +1028,15 @@ def sms_webhook():
             pending_relay.pop(relay_caller_id, None)
             stop_hold_music(relay_ccid)
             briefing = build_briefing(relay_caller_id, name, purpose, urgency, caller_type)
+            # Store transfer target — actual transfer happens after briefing finishes playing
+            relay_session = call_sessions.get(relay_ccid, {})
+            relay_session["transfer_to"] = SCOTT_REAL_NUMBER
+            call_sessions[relay_ccid] = relay_session
             speak(relay_ccid, briefing, client_state="briefing")
-            telnyx_action(relay_ccid, "transfer", to=SCOTT_REAL_NUMBER)
             update_caller_record(relay_caller_id, action="forwarded_by_scott",
                                   purpose=purpose, urgency=urgency, caller_type=caller_type,
                                   increment_count=False)
             send_sms(SCOTT_REAL_NUMBER, f"✅ Connecting {name or relay_caller_id} now.")
-            call_sessions.pop(relay_ccid, None)
 
         elif text in ("VM", "VOICEMAIL"):
             pending_relay.pop(relay_caller_id, None)
@@ -1283,9 +1285,9 @@ def webhook():
             caller_rec = get_caller_record(caller_id)
             known_name = caller_rec.get("name") if caller_rec else None
             vip_note   = " You're on Scott's VIP list." if is_vip(caller_id) and not number_in_whitelist(caller_id) else ""
-            msg = f"Welcome back, {known_name}!{vip_note} One moment." if known_name else "One moment, connecting you to Scott."
-            speak(ccid, msg, client_state="screened")
-            telnyx_action(ccid, "transfer", to=SCOTT_REAL_NUMBER)
+            msg = f"Welcome back, {known_name}!{vip_note} One moment, connecting you to Scott." if known_name else "One moment, connecting you to Scott."
+            session["transfer_to"] = SCOTT_REAL_NUMBER
+            speak(ccid, msg, client_state="briefing")
             log_daily_call(caller_id, known_name, "forwarded_whitelist", "whitelisted/VIP contact")
 
         elif lookup and lookup.get("spam_score", 0) >= 9:
@@ -1351,8 +1353,17 @@ def webhook():
             )
             start_listening(ccid)
 
-        elif client_state in ("screened", "briefing"):
+        elif client_state == "screened":
             pass
+
+        elif client_state == "briefing":
+            # Briefing finished playing — NOW transfer to Scott
+            session = call_sessions.get(ccid)
+            if session:
+                to_number = session.get("transfer_to", SCOTT_REAL_NUMBER)
+                print(f"[Briefing done] Transferring to {to_number}")
+                telnyx_action(ccid, "transfer", to=to_number)
+                call_sessions.pop(ccid, None)
 
         elif client_state == "relay_hold":
             # After hold message finishes, start hold music + listen for voicemail opt-out
@@ -1546,9 +1557,9 @@ def webhook():
                 session.get("caller_urgency"),
                 session.get("caller_type"),
             )
-            speak(ccid, message, client_state="briefing")
-            telnyx_action(ccid, "transfer", to=SCOTT_REAL_NUMBER)
-            call_sessions.pop(ccid, None)
+            # Store transfer target — actual transfer happens in speak.ended after briefing plays
+            session["transfer_to"] = SCOTT_REAL_NUMBER
+            speak(ccid, briefing, client_state="briefing")
 
         elif action == "relay":
             if session.get("relay_sent"):
