@@ -1361,7 +1361,9 @@ def webhook():
             session = call_sessions.get(ccid)
             if session:
                 to_number = session.get("transfer_to", SCOTT_REAL_NUMBER)
-                print(f"[Briefing done] Transferring to {to_number}")
+                name = session.get("caller_name", "")
+                purpose = session.get("caller_purpose", "")
+                print(f"[Briefing done] Transferring {name} to {to_number}")
                 telnyx_action(ccid, "transfer", to=to_number)
                 call_sessions.pop(ccid, None)
 
@@ -1497,10 +1499,14 @@ def webhook():
         if name_in_whitelist(transcript):
             print(f"[Whitelist name] '{transcript}'")
             extracted = extract_name_from_transcript(transcript)
-            briefing  = build_briefing(caller_id, extracted, "whitelisted contact", 10)
-            speak(ccid, "One moment, connecting you to Scott now.", client_state="briefing")
-            telnyx_action(ccid, "transfer", to=SCOTT_REAL_NUMBER)
-            call_sessions.pop(ccid, None)
+            name_display = extracted or transcript.strip(".")
+            # Store transfer target — actual transfer fires after briefing finishes
+            session["transfer_to"] = SCOTT_REAL_NUMBER
+            session["caller_name"] = name_display
+            speak(ccid,
+                f"One moment, connecting you to Scott now.",
+                client_state="briefing"
+            )
             return jsonify({"status": "ok"})
 
         session["history"].append({"role": "user", "content": transcript})
