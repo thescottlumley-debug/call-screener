@@ -27,16 +27,17 @@
       "voicemails": []
     },
     "+16159983962": {
-      "name": null,
+      "name": "Dianne",
+      "alias": "Mom",
       "first_call": "2026-02-26T19:30:39.330545Z",
       "last_call": "2026-02-26T19:41:26.523617Z",
       "call_count": 3,
       "last_action": null,
       "last_purpose": null,
       "last_urgency": null,
-      "caller_type": null,
+      "caller_type": "personal",
       "lookup_summary": null,
-      "notes": [],
+      "notes": ["[2026-02-26] Scott's Mom — also known as Dianne — always forward immediately"],
       "voicemails": []
     }
   }

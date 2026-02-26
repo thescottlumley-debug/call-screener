@@ -1284,11 +1284,14 @@ def webhook():
         if number_in_whitelist(caller_id) or is_vip(caller_id):
             caller_rec = get_caller_record(caller_id)
             known_name = caller_rec.get("name") if caller_rec else None
+            alias      = caller_rec.get("alias") if caller_rec else None
+            greet_name = alias or known_name  # use alias (e.g. "Mom") if available
             vip_note   = " You're on Scott's VIP list." if is_vip(caller_id) and not number_in_whitelist(caller_id) else ""
-            msg = f"Welcome back, {known_name}!{vip_note} One moment, connecting you to Scott." if known_name else "One moment, connecting you to Scott."
+            msg = f"Welcome back, {greet_name}!{vip_note} One moment, connecting you to Scott." if greet_name else "One moment, connecting you to Scott."
             session["transfer_to"] = SCOTT_REAL_NUMBER
+            session["caller_name"] = greet_name or known_name
             speak(ccid, msg, client_state="briefing")
-            log_daily_call(caller_id, known_name, "forwarded_whitelist", "whitelisted/VIP contact")
+            log_daily_call(caller_id, greet_name or known_name, "forwarded_whitelist", "whitelisted/VIP contact")
 
         elif lookup and lookup.get("spam_score", 0) >= 9:
             # ✨ Confirmed high-confidence spam — block immediately, notify Scott
