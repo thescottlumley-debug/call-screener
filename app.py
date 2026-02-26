@@ -35,6 +35,104 @@ appointments = []
 # ✨ Number lookup cache so we don't re-lookup same number
 lookup_cache = {}
 
+# ✨ Feature 10: Do Not Disturb mode (toggled via SMS)
+dnd_mode = False
+
+# ✨ Feature 12: VIP numbers — always get through, even during quiet hours / DND
+vip_numbers = []
+
+# ✨ Feature 11: Daily summary — track calls per day
+daily_call_log = []  # list of {time, caller_id, name, action, purpose}
+
+
+# ─────────────────────────────────────────────
+# ✨ Feature 10: Do Not Disturb
+# ─────────────────────────────────────────────
+
+def is_dnd():
+    return dnd_mode
+
+def set_dnd(on: bool):
+    global dnd_mode
+    dnd_mode = on
+    print(f"[DND] Mode {'ON' if on else 'OFF'}")
+
+
+# ─────────────────────────────────────────────
+# ✨ Feature 12: VIP Fast-Track
+# ─────────────────────────────────────────────
+
+def is_vip(caller_id):
+    return caller_id in vip_numbers
+
+def add_vip(number):
+    if number not in vip_numbers:
+        vip_numbers.append(number)
+        print(f"[VIP] Added {number}")
+        return True
+    return False
+
+def remove_vip(number):
+    if number in vip_numbers:
+        vip_numbers.remove(number)
+        print(f"[VIP] Removed {number}")
+        return True
+    return False
+
+
+# ─────────────────────────────────────────────
+# ✨ Feature 11: Daily Call Summary
+# ─────────────────────────────────────────────
+
+def log_daily_call(caller_id, name, action, purpose):
+    """Log each call for the daily summary."""
+    tz  = pytz.timezone(SCOTT_TIMEZONE)
+    now = datetime.now(tz)
+    daily_call_log.append({
+        "time":      now.strftime("%I:%M %p"),
+        "caller_id": caller_id,
+        "name":      name or "Unknown",
+        "action":    action or "unknown",
+        "purpose":   purpose or "unknown",
+        "date":      now.strftime("%Y-%m-%d"),
+    })
+    # Keep only last 100 entries
+    if len(daily_call_log) > 100:
+        daily_call_log.pop(0)
+
+def build_daily_summary():
+    """Build a daily SMS summary of all calls today."""
+    tz    = pytz.timezone(SCOTT_TIMEZONE)
+    today = datetime.now(tz).strftime("%Y-%m-%d")
+    today_calls = [c for c in daily_call_log if c.get("date") == today]
+
+    if not today_calls:
+        return f"📊 ARIA Daily Summary — {datetime.now(tz).strftime('%B %d')}\nNo calls today."
+
+    total     = len(today_calls)
+    forwarded = sum(1 for c in today_calls if "forward" in c.get("action", ""))
+    voicemails= sum(1 for c in today_calls if "voicemail" in c.get("action", ""))
+    blocked   = sum(1 for c in today_calls if "block" in c.get("action", ""))
+    relayed   = sum(1 for c in today_calls if "relay" in c.get("action", ""))
+
+    lines = [
+        f"📊 ARIA Daily Summary — {datetime.now(tz).strftime('%A, %B %d')}",
+        f"Total calls: {total}  |  Forwarded: {forwarded}  |  Voicemails: {voicemails}  |  Blocked: {blocked}  |  Relayed: {relayed}",
+        "",
+    ]
+    for c in today_calls[-10:]:  # last 10 calls
+        emoji = {"forward": "✅", "voicemail": "📬", "block": "🚫", "relay": "📲"}.get(
+            c.get("action", "").split("_")[0], "📞")
+        lines.append(f"{emoji} {c['time']} — {c['name']} — {c['purpose']}")
+
+    return "\n".join(lines)
+
+def send_daily_summary():
+    """Send the daily summary SMS to Scott."""
+    summary = build_daily_summary()
+    print(f"[Daily Summary] Sending: {summary[:100]}")
+    send_sms(SCOTT_REAL_NUMBER, summary)
+
 
 # ─────────────────────────────────────────────
 # ✨ NEW: Web Lookup — number intelligence
@@ -937,15 +1035,22 @@ def sms_webhook():
         nums  = contacts.get("approved_numbers", [])
         names = contacts.get("approved_names", [])
         quiet = "ON" if is_quiet_hours() else "OFF"
+        dnd   = "🔕 ON" if is_dnd() else "OFF"
         total_callers  = len(caller_history.get("callers", {}))
         pending_count  = len(pending_relay)
         appt_count     = len(appointments)
+        tz    = pytz.timezone(SCOTT_TIMEZONE)
+        today = datetime.now(tz).strftime("%Y-%m-%d")
+        calls_today = sum(1 for c in daily_call_log if c.get("date") == today)
         reply = (f"📋 ARIA status:\n"
                  f"Time: {current_time_str()}\n"
+                 f"DND: {dnd}\n"
                  f"Quiet hours: {quiet} ({QUIET_START}pm–{QUIET_END}am)\n"
                  f"Approved numbers: {len(nums)}\n"
                  f"Approved names: {len(names)}\n"
+                 f"VIP numbers: {len(vip_numbers)}\n"
                  f"Callers remembered: {total_callers}\n"
+                 f"Calls today: {calls_today}\n"
                  f"Calls waiting decision: {pending_count}\n"
                  f"Scheduled callbacks: {appt_count}")
         send_sms(SCOTT_REAL_NUMBER, reply)
@@ -996,6 +1101,47 @@ def sms_webhook():
         )
         send_sms(SCOTT_REAL_NUMBER, reply)
 
+    # ✨ Feature 10: DND ON / DND OFF
+    elif text in ("DND ON", "DND"):
+        set_dnd(True)
+        send_sms(SCOTT_REAL_NUMBER,
+            "🔕 Do Not Disturb is ON.\n"
+            "All calls will go straight to voicemail.\n"
+            "Text DND OFF to turn it off.\n"
+            "VIP callers still get through.")
+
+    elif text == "DND OFF":
+        set_dnd(False)
+        send_sms(SCOTT_REAL_NUMBER, "🔔 Do Not Disturb is OFF. ARIA is screening calls normally.")
+
+    # ✨ Feature 12: VIP list management
+    elif text.startswith("VIP ADD "):
+        number = text[8:].strip()
+        if not number.startswith("+"):
+            number = "+1" + number.replace("-", "").replace(" ", "")
+        added = add_vip(number)
+        reply = f"⭐ {number} added to VIP list. They will always get through, even during DND or quiet hours." if added else f"ℹ️ {number} is already a VIP."
+        send_sms(SCOTT_REAL_NUMBER, reply)
+
+    elif text.startswith("VIP REMOVE "):
+        number = text[11:].strip()
+        if not number.startswith("+"):
+            number = "+1" + number.replace("-", "").replace(" ", "")
+        removed = remove_vip(number)
+        reply = f"⭐ {number} removed from VIP list." if removed else f"ℹ️ {number} was not on the VIP list."
+        send_sms(SCOTT_REAL_NUMBER, reply)
+
+    elif text == "VIP":
+        if vip_numbers:
+            reply = "⭐ VIP List:\n" + "\n".join(vip_numbers)
+        else:
+            reply = "⭐ No VIP numbers set.\nUse: VIP ADD +1XXXXXXXXXX"
+        send_sms(SCOTT_REAL_NUMBER, reply)
+
+    # ✨ Feature 11: Daily summary on demand
+    elif text == "SUMMARY":
+        send_daily_summary()
+
     # ✨ NEW: LOOKUP command — manually look up a number
     # Usage: LOOKUP +16155551234
     elif text.startswith("LOOKUP "):
@@ -1019,10 +1165,15 @@ def sms_webhook():
             "VM → voicemail\n"
             "SCHEDULE or S → book callback\n"
             "APPTS → list callbacks\n"
-            "ADD +1XXXXXXXXXX\n"
-            "REMOVE +1XXXXXXXXXX\n"
+            "ADD +1XXXXXXXXXX → whitelist\n"
+            "REMOVE +1XXXXXXXXXX → unwhitelist\n"
+            "VIP ADD +1XXXXXXXXXX → VIP tier\n"
+            "VIP REMOVE +1XXXXXXXXXX\n"
+            "VIP → list VIPs\n"
+            "DND ON / DND OFF → do not disturb\n"
             "STATUS → system status\n"
             "STATS → call statistics\n"
+            "SUMMARY → today's call log\n"
             "HISTORY +1XXXXXXXXXX\n"
             "LOOKUP +1XXXXXXXXXX\n"
             "NOTE +1XXXXXXXXXX your note")
@@ -1081,12 +1232,14 @@ def webhook():
                 update_caller_record(caller_id, lookup_summary=lookup.get("summary"),
                                      increment_count=False)
 
-        if number_in_whitelist(caller_id):
+        if number_in_whitelist(caller_id) or is_vip(caller_id):
             caller_rec = get_caller_record(caller_id)
             known_name = caller_rec.get("name") if caller_rec else None
-            msg = f"Welcome back, {known_name}! One moment." if known_name else "One moment, connecting you to Scott."
+            vip_note   = " You're on Scott's VIP list." if is_vip(caller_id) and not number_in_whitelist(caller_id) else ""
+            msg = f"Welcome back, {known_name}!{vip_note} One moment." if known_name else "One moment, connecting you to Scott."
             speak(ccid, msg, client_state="screened")
             telnyx_action(ccid, "transfer", to=SCOTT_REAL_NUMBER)
+            log_daily_call(caller_id, known_name, "forwarded_whitelist", "whitelisted/VIP contact")
 
         elif lookup and lookup.get("spam_score", 0) >= 9:
             # ✨ Confirmed high-confidence spam — block immediately, notify Scott
@@ -1104,6 +1257,10 @@ def webhook():
             hour = datetime.now(tz).hour
             print(f"[Quiet hours] {hour}h — voicemail")
             start_voicemail(ccid, caller_id, reason="quiet hours")
+
+        elif is_dnd():
+            print(f"[DND] Active — sending {caller_id} to voicemail")
+            start_voicemail(ccid, caller_id, reason="do not disturb")
 
         else:
             caller_rec  = get_caller_record(caller_id)
@@ -1296,6 +1453,10 @@ def webhook():
             caller_type=session.get("caller_type"),
             increment_count=False,
         )
+
+        # ✨ Feature 11: Log for daily summary
+        log_daily_call(caller_id, session.get("caller_name"),
+                       result.get("action"), session.get("caller_purpose"))
 
         action  = result.get("action", "speak")
         message = result.get("message", "Could you please repeat that?")
