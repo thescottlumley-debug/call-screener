@@ -471,7 +471,12 @@ def decode_state(s):
         return s
 
 def speak(ccid, message, client_state=None):
-    kwargs = {"payload": message, "voice": "female", "language": "en-US"}
+    kwargs = {
+        "payload": message,
+        "payload_type": "text",
+        "voice": "Polly.Joanna-Neural",
+        "language": "en-US",
+    }
     if client_state:
         kwargs["client_state"] = encode_state(client_state)
     telnyx_action(ccid, "speak", **kwargs)
@@ -1307,6 +1312,12 @@ def webhook():
         elif client_state in ("screened", "briefing"):
             pass
 
+        elif client_state == "relay_hold":
+            # After hold message, listen in case caller says "voicemail" or hangs up
+            session = call_sessions.get(ccid)
+            if session and session.get("relay_sent"):
+                start_listening(ccid)
+
         else:
             session = call_sessions.get(ccid)
             if session and not session.get("deciding") and not session.get("voicemail"):
@@ -1396,6 +1407,23 @@ def webhook():
 
             return jsonify({"status": "ok"})
 
+        # ── Caller is on relay hold — only listen for "voicemail" keyword ──
+        if session.get("relay_sent") and not session.get("voicemail"):
+            t_lower = transcript.lower()
+            if any(w in t_lower for w in ["voicemail", "message", "leave a message", "that's fine", "no problem", "okay"]):
+                print(f"[Relay Hold] Caller opted for voicemail: '{transcript}'")
+                pending_relay.pop(caller_id, None)
+                session["relay_sent"] = False
+                start_voicemail(ccid, caller_id, reason="caller chose voicemail while on hold")
+            else:
+                # Caller said something else — reassure them
+                speak(ccid,
+                    "Still checking with Scott. Thank you for your patience. "
+                    "Say voicemail anytime if you'd like to leave a message.",
+                    client_state="relay_hold"
+                )
+            return jsonify({"status": "ok"})
+
         if session.get("deciding"):
             print("[Skipping] already processing")
             return jsonify({"status": "ok"})
@@ -1479,7 +1507,10 @@ def webhook():
             call_sessions.pop(ccid, None)
 
         elif action == "relay":
-            speak(ccid, message)
+            if session.get("relay_sent"):
+                # Already waiting — don't re-send, just stay quiet
+                print(f"[Relay] Already waiting for Scott's decision, ignoring transcript")
+                return jsonify({"status": "ok"})
             send_relay_sms(
                 ccid, caller_id,
                 session.get("caller_name"),
@@ -1488,7 +1519,13 @@ def webhook():
                 session.get("caller_type"),
             )
             session["relay_sent"] = True
-            start_listening(ccid)
+            session["relay_time"] = datetime.utcnow().isoformat()
+            # Tell caller we're checking, then offer voicemail option while they wait
+            speak(ccid,
+                "I'm checking with Scott right now. Please hold for just a moment. "
+                "If you'd prefer, say voicemail and I can take a message instead.",
+                client_state="relay_hold"
+            )
 
         elif action == "schedule":
             # ✨ ARIA confirmed a time — book it
