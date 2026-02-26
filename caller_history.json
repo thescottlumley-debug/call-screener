@@ -27,16 +27,16 @@
       "voicemails": []
     },
     "+16159983962": {
-      "name": "Dianne",
+      "name": null,
       "first_call": "2026-02-26T19:30:39.330545Z",
-      "last_call": "2026-02-26T19:38:09.367405Z",
-      "call_count": 2,
+      "last_call": "2026-02-26T19:41:26.523617Z",
+      "call_count": 3,
       "last_action": null,
       "last_purpose": null,
       "last_urgency": null,
-      "caller_type": "personal",
+      "caller_type": null,
       "lookup_summary": null,
-      "notes": ["[2026-02-26] Scott's relative — greet by name"],
+      "notes": [],
       "voicemails": []
     }
   }
