@@ -12,6 +12,19 @@
       "lookup_summary": null,
       "notes": [],
       "voicemails": []
+    },
+    "Unknown": {
+      "name": null,
+      "first_call": "2026-02-26T18:59:17.785511Z",
+      "last_call": "2026-02-26T18:59:17.785511Z",
+      "call_count": 0,
+      "last_action": "speak",
+      "last_purpose": null,
+      "last_urgency": null,
+      "caller_type": null,
+      "lookup_summary": null,
+      "notes": [],
+      "voicemails": []
     }
   }
 }
